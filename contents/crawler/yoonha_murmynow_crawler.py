@@ -1,5 +1,5 @@
 """
-머미나우 크롤러 v10 - 전체 수집 버전
+머미나우 크롤러 v11 - 리뷰 전량 수집 버전
 =========================================
 컬럼:
   goods_no, name, category,
@@ -25,7 +25,6 @@ from bs4 import BeautifulSoup
 # 설정
 # ============================================================
 
-MAX_REVIEWS     = 10
 DELAY_LIST      = 1.5
 DELAY_DETAIL    = 1.5
 DELAY_REVIEW    = 0.3
@@ -420,40 +419,19 @@ class MurmynowCrawler:
         return d
 
     # ----------------------------------------------------------
-    # Step 3: 리뷰
+    # Step 3: 리뷰 (전량 수집 — 페이지네이션)
     # ----------------------------------------------------------
 
-    def collect_reviews(self, goods_no):
-
-        url = "https://m.murmynow.com/goods/goods_board_list.php"
-
-        params = {
-            "bdId": "goodsreview",
-            "goodsNo": goods_no,
-            "gboard": "y",
-            "page": 1,
-        }
-
-        resp = self.client.get(
-            url,
-            HEADERS_MOBILE,
-            params=params
-        )
-
-        if not resp or not resp.text.strip():
-            return []
-
-        soup = BeautifulSoup(resp.text, "html.parser")
+    def _parse_review_items(self, soup):
+        """한 페이지의 리뷰 li 요소들을 파싱하여 Review 리스트로 반환"""
 
         reviews = []
 
-        for item in soup.select("li.review_list_li")[:MAX_REVIEWS]:
+        for item in soup.select("li.review_list_li"):
 
             # 별점
             rating = ""
-
             rating_span = item.select_one(".rating span[style]")
-
             if rating_span:
                 rating = width_to_rating(
                     rating_span.get("style", "")
@@ -461,38 +439,29 @@ class MurmynowCrawler:
 
             # 작성일
             date = ""
-
             date_el = item.select_one(".reg_date_box span")
-
             if date_el:
                 date = date_el.get_text(strip=True)
 
             # 닉네임
             author = ""
-
             author_el = item.select_one(".member_name")
-
             if author_el:
                 author = author_el.get_text(strip=True)
 
             # 본문
             text = ""
-
             text_el = item.select_one(".cont_box a")
-
             if text_el:
                 text = text_el.get_text(strip=True)
 
             # 난이도
             difficulty = ""
-
             diff_el = item.select_one(".wg_icon_difficulty")
-
             if diff_el:
                 difficulty = diff_el.get_text(strip=True)
 
             if text:
-
                 reviews.append(
                     Review(
                         review_text=text,
@@ -504,6 +473,53 @@ class MurmynowCrawler:
                 )
 
         return reviews
+
+    def collect_reviews(self, goods_no):
+        """테마의 모든 리뷰를 페이지네이션하며 전량 수집"""
+
+        all_reviews = []
+        page = 1
+
+        while True:
+
+            params = {
+                "bdId": "goodsreview",
+                "goodsNo": goods_no,
+                "gboard": "y",
+                "page": page,
+            }
+
+            resp = self.client.get(
+                "https://m.murmynow.com/goods/goods_board_list.php",
+                HEADERS_MOBILE,
+                params=params,
+            )
+
+            if not resp or not resp.text.strip():
+                break
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            page_reviews = self._parse_review_items(soup)
+
+            # 이 페이지에서 파싱된 리뷰가 없으면 마지막 페이지
+            if not page_reviews:
+                break
+
+            all_reviews.extend(page_reviews)
+
+            # 다음 페이지 존재 여부 확인
+            has_next = soup.select_one(
+                f'a[href*="page={page + 1}"]'
+            )
+
+            if not has_next:
+                break
+
+            page += 1
+            time.sleep(DELAY_REVIEW)
+
+        return all_reviews
 
     # ----------------------------------------------------------
     # 실행
@@ -533,6 +549,9 @@ class MurmynowCrawler:
             reviews = self.collect_reviews(theme.goods_no)
 
             review_total += len(reviews)
+
+            if reviews:
+                print(f"        ↳ 리뷰 {len(reviews)}건 수집")
 
             base = {
                 **asdict(theme),
