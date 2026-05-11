@@ -475,12 +475,23 @@ class MurmynowCrawler:
         return reviews
 
     def collect_reviews(self, goods_no):
-        """테마의 모든 리뷰를 페이지네이션하며 전량 수집"""
+        """테마의 모든 리뷰를 전량 수집
+
+        머미나우(고도몰 커스텀 스킨) 리뷰 로드 방식:
+        - 상세 페이지 방문으로 세션/쿠키 확보 필수 (없으면 403)
+        - goods_board_list.php?bdId=goodsreview&goodsNo=...&gboard=y&page=N
+        - 페이지당 리뷰 5개
+        - 응답 HTML 내 button.detail_more_btn의 data-next-page로 다음 페이지 판별
+        - data-next-page=0 또는 버튼 없음 → 종료
+
+        주의: parse_detail이 먼저 호출되어 세션이 확보된 상태여야 함
+        """
 
         all_reviews = []
         page = 1
+        MAX_PAGES = 100  # 무한루프 안전장치
 
-        while True:
+        while page <= MAX_PAGES:
 
             params = {
                 "bdId": "goodsreview",
@@ -502,21 +513,24 @@ class MurmynowCrawler:
 
             page_reviews = self._parse_review_items(soup)
 
-            # 이 페이지에서 파싱된 리뷰가 없으면 마지막 페이지
+            # 이 페이지에서 파싱된 리뷰가 없으면 종료
             if not page_reviews:
                 break
 
             all_reviews.extend(page_reviews)
 
-            # 다음 페이지 존재 여부 확인
-            has_next = soup.select_one(
-                f'a[href*="page={page + 1}"]'
-            )
+            # data-next-page로 다음 페이지 판별
+            more_btn = soup.select_one("button.detail_more_btn")
 
-            if not has_next:
+            if not more_btn:
                 break
 
-            page += 1
+            next_page = more_btn.get("data-next-page", "0")
+
+            if next_page == "0" or not next_page:
+                break
+
+            page = int(next_page)
             time.sleep(DELAY_REVIEW)
 
         return all_reviews
