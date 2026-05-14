@@ -1,0 +1,143 @@
+# ══════════════════════════════════════════════
+# Nolit RAG 설정 파일
+# 경로, 모델, 파라미터 등 모든 설정을 여기서 관리
+# 코드 수정 없이 이 파일만 바꾸면 전체 반영됨
+# ══════════════════════════════════════════════
+
+# ── 기본 경로 ──────────────────────────────────
+paths:
+  data_dir   : "data"
+  vector_dir : "data"
+  env_file   : ".env"
+
+# ── 임베딩 모델 설정 ───────────────────────────
+embedding:
+  # OpenAI 계열 (1536차원)
+  openai_model  : "text-embedding-3-small"
+  openai_dim    : 1536
+  # HuggingFace 계열 (768차원) - bbabang 전용
+  hf_model      : "jhgan/ko-sroberta-multitask"
+  hf_dim        : 768
+  batch_size    : 100
+  max_chars     : 30000
+  sleep_sec     : 0.5
+
+# ── 검색 설정 ──────────────────────────────────
+retrieval:
+  top_k  : 5
+  rrf_k  : 60
+
+# ── 데이터소스별 설정 ──────────────────────────
+# engine    : openai | hf  (임베딩 엔진 선택)
+# use_ckpt  : 체크포인트 여부 (대용량 데이터)
+# fuzzy     : fuzzy matching 사용 여부 (bbabang 전용)
+
+sources:
+
+  # ── OpenAI 계열 ──────────────────────────────
+
+  bgg_stats:
+    engine   : openai
+    csv      : "bgg_stats_final.csv"
+    index    : "faiss_bgg_stats.index"
+    meta     : "faiss_bgg_stats_meta.json"
+    text_col : "text"
+    use_ckpt : false
+
+  bgg_reviews:
+    engine   : openai
+    csv      : "bgg_reviews_final.csv"
+    index    : "faiss_bgg_reviews.index"
+    meta     : "faiss_bgg_reviews_meta.json"
+    text_col : "text"
+    use_ckpt : true
+
+  boardlife_stats:
+    engine   : openai
+    csv      : "boardlife_games_stats_final.csv"
+    index    : "faiss_boardlife_stats.index"
+    meta     : "faiss_boardlife_stats_meta.json"
+    text_col : "description"
+    meta_cols:
+      - rank
+      - title
+      - title_eng
+      - age
+      - weight
+      - designer
+      - artist
+      - type
+      - category
+      - mechanism
+      - image
+      - avg_rating
+      - category_rank
+      - min_players
+      - max_players
+      - best_players
+      - recommend_players
+      - min_time
+      - max_time
+      - source
+    use_ckpt : false
+
+  boardlife_reviews:
+    engine   : openai
+    csv      : "boardlife_reviews_final.csv"
+    index    : "faiss_boardlife_reviews.index"
+    meta     : "faiss_boardlife_reviews_meta.json"
+    text_col : "review_text"
+    meta_cols:
+      - rank
+      - title
+      - rating
+      - source
+    use_ckpt : false
+
+  murmynow:
+    engine   : openai
+    csv      : "murmynow_final.csv"
+    index    : "faiss_murmynow.index"
+    meta     : "faiss_murmynow_meta.json"
+    text_col : "text"
+    use_ckpt : true
+
+  murdermysterylog:
+    engine   : openai
+    csv      : "murdermysterylog_final.csv"
+    index    : "faiss_murdermysterylog.index"
+    meta     : "faiss_murdermysterylog_meta.json"
+    text_col : "reviews"
+    meta_cols:
+      - url
+      - name
+      - rating
+      - play_time
+      - description
+      - 시리즈
+      - 제작
+      - reviews
+      - min_players
+      - max_players
+      - source
+    use_ckpt : false
+
+  # ── HuggingFace 계열 (bbabang 전용) ──────────
+
+  bbabang_stats:
+    engine   : hf
+    csv_stats   : "bbabang_stats_final.csv"
+    csv_reviews : "bbabang_reviews_final.csv"
+    index    : "faiss_bbabang_stats.index"
+    meta     : "faiss_bbabang_stats_metadata.json"
+    use_ckpt : false
+    fuzzy    : true
+
+  bbabang_reviews:
+    engine   : hf
+    csv_stats   : "bbabang_stats_final.csv"
+    csv_reviews : "bbabang_reviews_final.csv"
+    index    : "faiss_bbabang_reviews.index"
+    meta     : "faiss_bbabang_reviews_metadata.json"
+    use_ckpt : false
+    fuzzy    : true
