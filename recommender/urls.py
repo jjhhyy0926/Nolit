@@ -1,10 +1,13 @@
 from django.urls import path
-<<<<<<< HEAD
-from .views import ChatView, RecommendView
- 
-app_name = "recommender"
- 
+
+from . import views
+
+app_name = 'recommender'
+
 urlpatterns = [
-    path("chat/",      ChatView.as_view(),      name="chat"),
-    # path("recommend/", RecommendView.as_view(), name="recommend"),
+    path('', views.home, name='home'),
+    path('ai/', views.ai, name='ai'),
+    path('explore/', views.explore, name='explore'),
+    path('persona/', views.persona, name='persona'),
+    path('api/chat/', views.chat_api, name='chat_api'),
 ]
