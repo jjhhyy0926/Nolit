@@ -1,52 +1,72 @@
+
 from django.shortcuts import render, redirect
-<<<<<<< HEAD
-from django.contrib.auth import login, logout, authenticate
-from django.contrib.auth.decorators import login_required
-from django.contrib import messages
-from .forms import SignupForm, PersonaForm
-from .models import Persona
+from django.contrib.auth import authenticate
+from django.contrib.auth import login as auth_login
+from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth.models import User
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+
+# Create your views here.
+
+def login(request):
+    if request.user.is_authenticated:
+        return redirect('recommender:home')
+
+    error = None
+    if request.method == 'POST':
+        username = request.POST.get('username', '').strip()
+        password = request.POST.get('password', '')
+        user = authenticate(request, username=username, password=password)
+        if user:
+            auth_login(request, user)
+            next_url = request.POST.get('next') or 'recommender:home'
+            return redirect(next_url)
+        error = '아이디 또는 비밀번호가 올바르지 않습니다.'
+
+    return render(request, 'accounts/login.html', {
+        'error': error,
+        'next': request.GET.get('next', ''),
+        'current_page': 'login',
+    })
+
+
+def logout(request):
+    auth_logout(request)
+    return redirect('recommender:home')
 
 
 def signup(request):
-    if request.method == "POST":
-        form = SignupForm(request.POST)
+    if request.user.is_authenticated:
+        return redirect('recommender:home')
+
+    form = UserCreationForm()
+    errors = []
+
+    if request.method == 'POST':
+        form = UserCreationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
-            messages.success(request, "회원가입이 완료되었습니다!")
-            return redirect("accounts:persona")
-    else:
-        form = SignupForm()
-    return render(request, "accounts/signup.html", {"form": form})
+            auth_login(request, user)
+            return redirect('recommender:home')
+        for field_errors in form.errors.values():
+            errors.extend(field_errors)
+
+    return render(request, 'accounts/signup.html', {
+        'form': form,
+        'errors': errors,
+        'username_val': request.POST.get('username', ''),
+        'current_page': 'signup',
+    })
 
 
-def login_view(request):
-    if request.method == "POST":
-        username = request.POST.get("username")
-        password = request.POST.get("password")
-        user = authenticate(request, username=username, password=password)
-        if user:
-            login(request, user)
-            return redirect(request.GET.get("next", "/"))
-        messages.error(request, "아이디 또는 비밀번호가 올바르지 않습니다.")
-    return render(request, "accounts/login.html")
-
-
-def logout_view(request):
-    logout(request)
-    return redirect("/")
-
-
-@login_required
-def persona(request):
-    """페르소나 설정 / 수정"""
-    instance, _ = Persona.objects.get_or_create(user=request.user)
-    if request.method == "POST":
-        form = PersonaForm(request.POST, instance=instance)
-        if form.is_valid():
-            form.save()
-            messages.success(request, "성향이 저장되었습니다!")
-            return redirect("/")
-    else:
-        form = PersonaForm(instance=instance)
-    return render(request, "accounts/persona.html", {"form": form})
+@require_GET
+def check_username(request):
+    username = request.GET.get('username', '').strip()
+    if len(username) < 4:
+        return JsonResponse({'available': False, 'message': '4자 이상 입력해주세요.'})
+    exists = User.objects.filter(username=username).exists()
+    if exists:
+        return JsonResponse({'available': False, 'message': '이미 사용 중인 아이디입니다.'})
+    return JsonResponse({'available': True, 'message': '사용 가능한 아이디입니다.'})
