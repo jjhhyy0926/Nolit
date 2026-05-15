@@ -9,3 +9,4 @@ pyyaml
 sentence-transformers
 rapidfuzz
 rank-bm25
+langgraph

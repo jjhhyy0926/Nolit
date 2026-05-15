@@ -87,64 +87,101 @@ DEFAULT_PERSONA = {
     "horrorTolerance": "low", "activityLevel": "moderate", "budget": "20000",
 }
 
+SOURCE_TO_CATEGORY = {
+    "bgg": "보드게임",
+    "boardlife": "보드게임",
+    "bbabang": "보드게임",
+    "murmynow": "머더미스터리",
+    "murdermysterylog": "머더미스터리",
+}
+
+
+def _rag_to_recommendations(games):
+    """RAG 파이프라인 games 리스트를 프론트엔드 recommendations 포맷으로 변환"""
+    result = []
+    for i, game in enumerate(games[:3], 1):
+        rating = game.get("avg_rating") or game.get("rating") or 0
+        matched = game.get("matched_tags") or game.get("emotion_tags") or []
+        score = game.get("final_score")
+        source = game.get("source", "")
+        category = SOURCE_TO_CATEGORY.get(source, "보드게임")
+
+        if matched:
+            evidence = "감정 태그 매칭: " + ", ".join(matched)
+        elif score:
+            evidence = "최종 점수: " + str(round(float(score), 3))
+        else:
+            evidence = "RAG 검색 결과 기반 추천"
+
+        result.append({
+            "rank": i,
+            "title": game.get("title", "?"),
+            "category": category,
+            "rating": round(float(rating), 1) if rating else 0,
+            "reason": game.get("reason", ""),
+            "evidence": evidence,
+            "risk": None,
+        })
+    return result
+
 
 def home(request):
-    return render(request, 'recommender/home.html', {'current_page': 'home'})
+    return render(request, "recommender/home.html", {"current_page": "home"})
 
 
 def ai(request):
-    return render(request, 'recommender/ai.html', {
-        'current_page': 'ai',
-        'ai_flow_json': json.dumps(AI_FLOW, ensure_ascii=False),
-        'recommendations_json': json.dumps(RECOMMENDATIONS, ensure_ascii=False),
+    return render(request, "recommender/ai.html", {
+        "current_page": "ai",
+        "ai_flow_json": json.dumps(AI_FLOW, ensure_ascii=False),
+        "recommendations_json": json.dumps(RECOMMENDATIONS, ensure_ascii=False),
     })
 
 
 def explore(request):
-    category = request.GET.get('category', 'all')
-    search = request.GET.get('search', '').strip().lower()
-    difficulty = request.GET.get('difficulty', '')
+    category = request.GET.get("category", "all")
+    search = request.GET.get("search", "").strip().lower()
+    difficulty = request.GET.get("difficulty", "")
 
     filtered = []
     for a in ACTIVITIES:
-        if category != 'all' and a['category'] != category:
+        if category != "all" and a["category"] != category:
             continue
-        if search and search not in a['title'].lower() and not any(search in t.lower() for t in a['tags']):
+        if search and search not in a["title"].lower() and not any(search in t.lower() for t in a["tags"]):
             continue
-        if difficulty and a['difficulty'] != difficulty:
+        if difficulty and a["difficulty"] != difficulty:
             continue
         a_copy = dict(a)
-        a_copy['emoji'] = CAT_EMOJI.get(a['category'], '')
-        a_copy['cat_label'] = CAT_LABEL.get(a['category'], '')
+        a_copy["emoji"] = CAT_EMOJI.get(a["category"], "")
+        a_copy["cat_label"] = CAT_LABEL.get(a["category"], "")
         filtered.append(a_copy)
 
-    return render(request, 'recommender/explore.html', {
-        'current_page': 'explore',
-        'activities': filtered,
-        'total': len(filtered),
-        'sel_category': category,
-        'sel_search': request.GET.get('search', ''),
-        'sel_difficulty': difficulty,
+    return render(request, "recommender/explore.html", {
+        "current_page": "explore",
+        "activities": filtered,
+        "total": len(filtered),
+        "sel_category": category,
+        "sel_search": request.GET.get("search", ""),
+        "sel_difficulty": difficulty,
     })
 
 
 def persona(request):
-    if request.method == 'POST':
-        request.session['persona'] = {
-            'groupSize': request.POST.get('groupSize', '4'),
-            'relationship': request.POST.get('relationship', 'friends'),
-            'horrorTolerance': request.POST.get('horrorTolerance', 'low'),
-            'activityLevel': request.POST.get('activityLevel', 'moderate'),
-            'budget': request.POST.get('budget', '20000'),
+    if request.method == "POST":
+        request.session["persona"] = {
+            "groupSize": request.POST.get("groupSize", "4"),
+            "relationship": request.POST.get("relationship", "friends"),
+            "horrorTolerance": request.POST.get("horrorTolerance", "low"),
+            "activityLevel": request.POST.get("activityLevel", "moderate"),
+            "budget": request.POST.get("budget", "20000"),
         }
-        return HttpResponseRedirect(reverse('recommender:persona') + '?saved=1')
+        return HttpResponseRedirect(reverse("recommender:persona") + "?saved=1")
 
-    persona_data = request.session.get('persona', DEFAULT_PERSONA)
-    saved = request.GET.get('saved') == '1'
-    return render(request, 'recommender/persona.html', {
-        'current_page': 'persona',
-        'persona': persona_data,
-        'saved': saved,
+    persona_data = request.session.get("persona", DEFAULT_PERSONA)
+    saved = request.GET.get("saved") == "1"
+    return render(request, "recommender/persona.html", {
+        "current_page": "persona",
+        "persona": persona_data,
+        "saved": saved,
     })
 
 
@@ -153,21 +190,63 @@ def persona(request):
 def chat_api(request):
     try:
         body = json.loads(request.body)
-        step = int(body.get('step', 0))
+        step = int(body.get("step", 0))
+        message = body.get("message", "").strip()
     except (json.JSONDecodeError, ValueError):
-        return JsonResponse({'error': 'invalid request'}, status=400)
+        return JsonResponse({"error": "invalid request"}, status=400)
+
+    # 사용자 응답을 세션에 누적
+    collected = request.session.get("chat_messages", [])
+    if message:
+        collected.append(message)
+    request.session["chat_messages"] = collected
+    request.session.modified = True
 
     next_step = step + 1
+
+    # 아직 질문이 남아 있으면 다음 질문 반환
     if next_step < len(AI_FLOW):
         return JsonResponse({
-            'reply': AI_FLOW[next_step],
-            'done': False,
-            'step': next_step,
+            "reply": AI_FLOW[next_step],
+            "done": False,
+            "step": next_step,
         })
-    else:
-        return JsonResponse({
-            'reply': '그룹 조건을 분석했습니다.\n비슷한 조건의 그룹 데이터를 기반으로 세 가지 추천을 드립니다.',
-            'done': True,
-            'step': next_step,
-            'recommendations': RECOMMENDATIONS,
-        })
+
+    # 모든 질문 완료 -> RAG 파이프라인 호출
+    try:
+        from recommender.yoonha_graph import run_pipeline
+
+        # 수집된 답변으로 자연어 쿼리 구성
+        query = " ".join(collected) if collected else "보드게임 추천해줘"
+
+        # 사용자 답변에서 카테고리 키워드 탐지
+        full_text = query.lower()
+        if any(kw in full_text for kw in ["머더", "미스터리", "방탈출", "탈출"]):
+            category = "murdermystery"
+        else:
+            category = "boardgame"
+
+        rag_result = run_pipeline(user_text=query, category=category, use_api=True)
+
+        # 세션 초기화 (다음 대화를 위해)
+        request.session["chat_messages"] = []
+        request.session.modified = True
+
+        games = rag_result.get("games", [])
+        answer = rag_result.get("answer", "그룹 조건을 분석했습니다.")
+        next_q = rag_result.get("next_question", "")
+
+        reply = (answer + "\n\n" + next_q) if next_q else answer
+        recommendations = _rag_to_recommendations(games) if games else RECOMMENDATIONS
+
+    except Exception:
+        # RAG 실패 시 기존 하드코딩 fallback
+        reply = "그룹 조건을 분석했습니다.\n비슷한 조건의 그룹 데이터를 기반으로 세 가지 추천을 드립니다."
+        recommendations = RECOMMENDATIONS
+
+    return JsonResponse({
+        "reply": reply,
+        "done": True,
+        "step": next_step,
+        "recommendations": recommendations,
+    })

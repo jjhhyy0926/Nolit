@@ -46,7 +46,7 @@ from rank_bm25 import BM25Okapi
 # 데이터 로드
 # -------------------------
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = PROJECT_ROOT / "data"
+DATA_DIR = PROJECT_ROOT / "04_vectorstore"
 
 bgg_index = faiss.read_index(str(DATA_DIR / "faiss_bgg_stats.index"))
 with open(DATA_DIR / "faiss_bgg_stats_meta.json", "r", encoding="utf-8") as f:
