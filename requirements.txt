@@ -1,17 +1,11 @@
-django>=4.2
-mysqlclient
-python-dotenv
-
-# LLM
+django
 openai
-
-# RAG / 벡터 검색
 faiss-cpu
-sentence-transformers
-
-# 데이터 처리
+numpy
 pandas
-
-langchain
-langgraph
+python-dotenv
+tqdm
+pyyaml
+sentence-transformers
+rapidfuzz
 rank-bm25
