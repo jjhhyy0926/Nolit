@@ -5,54 +5,6 @@ from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_GET
 
-ACTIVITIES = [
-    {
-        "id": "1", "title": "윙스팬 (Wingspan)", "category": "boardgame",
-        "rating": 4.6, "players": "1-5명", "time": "60분", "difficulty": "중급",
-        "horror": None,
-        "tags": ["엔진 빌딩", "카드 게임", "자연"],
-        "description": "BGG 1위, 조류 테마의 전략 보드게임",
-    },
-    {
-        "id": "2", "title": "비밀의 방", "category": "escape",
-        "rating": 4.3, "players": "2-5명", "time": "70분", "difficulty": "중",
-        "horror": "공포 없음",
-        "tags": ["추리", "초보 추천", "홍대"],
-        "description": "스토리 중심, 공포 요소 없는 입문자 추천 테마",
-    },
-    {
-        "id": "3", "title": "한강", "category": "murder",
-        "rating": 4.5, "players": "4-6명", "time": "120분", "difficulty": "중",
-        "horror": None,
-        "tags": ["추리", "협력", "입문용"],
-        "description": "배우 참여형 머더미스터리, 초보자 추천",
-    },
-    {
-        "id": "4", "title": "스파이폴", "category": "boardgame",
-        "rating": 4.4, "players": "3-8명", "time": "15분", "difficulty": "입문",
-        "horror": None,
-        "tags": ["파티", "대화", "추리"],
-        "description": "처음 만나는 사이에서 어색함을 빠르게 푸는 파티 게임",
-    },
-    {
-        "id": "5", "title": "저스트 원", "category": "boardgame",
-        "rating": 4.4, "players": "3-7명", "time": "20분", "difficulty": "입문",
-        "horror": None,
-        "tags": ["협력", "파티", "단어"],
-        "description": "2019년 올해의 게임 수상작, 완전 협력형 파티 게임",
-    },
-    {
-        "id": "6", "title": "공포의 저택", "category": "escape",
-        "rating": 4.1, "players": "2-4명", "time": "60분", "difficulty": "중상",
-        "horror": "공포 있음",
-        "tags": ["공포", "액션", "강남"],
-        "description": "공포 요소가 강한 액션형 방탈출 테마",
-    },
-]
-
-CAT_EMOJI = {"escape": "🔐", "boardgame": "🎲", "murder": "🕵️", "crime": "🔍"}
-CAT_LABEL = {"escape": "방탈출", "boardgame": "보드게임", "murder": "머더미스터리", "crime": "크라임씬"}
-
 AI_FLOW = [
     "안녕하세요! 그룹에 맞는 여가 활동을 추천해드리겠습니다.\n먼저, 몇 명이서 활동하실 예정인가요?",
     "좋습니다! 처음 만나는 사이인가요, 아니면 이미 친한 사이인가요?\n관계에 따라 추천이 달라집니다.",
@@ -135,35 +87,6 @@ def ai(request):
         "ai_flow_json": json.dumps(AI_FLOW, ensure_ascii=False),
         "recommendations_json": json.dumps(RECOMMENDATIONS, ensure_ascii=False),
     })
-
-
-def explore(request):
-    category = request.GET.get("category", "all")
-    search = request.GET.get("search", "").strip().lower()
-    difficulty = request.GET.get("difficulty", "")
-
-    filtered = []
-    for a in ACTIVITIES:
-        if category != "all" and a["category"] != category:
-            continue
-        if search and search not in a["title"].lower() and not any(search in t.lower() for t in a["tags"]):
-            continue
-        if difficulty and a["difficulty"] != difficulty:
-            continue
-        a_copy = dict(a)
-        a_copy["emoji"] = CAT_EMOJI.get(a["category"], "")
-        a_copy["cat_label"] = CAT_LABEL.get(a["category"], "")
-        filtered.append(a_copy)
-
-    return render(request, "recommender/explore.html", {
-        "current_page": "explore",
-        "activities": filtered,
-        "total": len(filtered),
-        "sel_category": category,
-        "sel_search": request.GET.get("search", ""),
-        "sel_difficulty": difficulty,
-    })
-
 
 def persona(request):
     if request.method == "POST":
@@ -250,3 +173,137 @@ def chat_api(request):
         "step": next_step,
         "recommendations": recommendations,
     })
+
+
+from recommender.prompts import QUICK_REPLIES, RAG_FALLBACK_MESSAGE
+from recommender.rag.jinseo_slot_extractor import (
+    extract_slots,
+    merge_slots,
+    missing_slots,
+    build_followup,
+    slots_to_query,
+    slots_to_persona_text,
+    slots_to_group,
+)
+
+# 슬롯 세션 키
+_SLOT_SESSION_KEY = "chat_slots"
+
+
+@require_GET
+def quick_reply_api(request):
+    """
+    현재 대화 step에 맞는 빠른 답변 버튼 목록 반환
+    GET /api/quickreply/?step=0
+    """
+    try:
+        step = int(request.GET.get("step", 0))
+    except ValueError:
+        return JsonResponse({"error": "invalid step"}, status=400)
+
+    buttons = QUICK_REPLIES[step] if 0 <= step < len(QUICK_REPLIES) else []
+    return JsonResponse({"step": step, "buttons": buttons})
+
+
+@csrf_exempt
+@require_POST
+def smart_chat_api(request):
+    """
+    자유 문장 + 역질문 방식의 스마트 챗봇 API
+    POST /api/smart-chat/
+    body: {"message": "4명이서 친한 친구끼리, 무서운 거 괜찮아, 2만원"}
+
+    동작 흐름:
+    1) 메시지에서 슬롯 추출 (LLM)
+    2) 세션에 저장된 기존 슬롯과 병합
+    3) 빠진 슬롯이 있으면 → 역질문 반환 (done=False)
+    4) 모든 슬롯이 채워지면 → RAG 실행 후 추천 반환 (done=True)
+    """
+    # ── 요청 파싱 ────────────────────────────────────────────
+    try:
+        body = json.loads(request.body)
+        message = body.get("message", "").strip()
+    except (json.JSONDecodeError, ValueError):
+        return JsonResponse({"error": "invalid request"}, status=400)
+
+    if not message:
+        return JsonResponse({"error": "message is required"}, status=400)
+
+    # ── 슬롯 추출 & 병합 ─────────────────────────────────────
+    existing_slots = request.session.get(_SLOT_SESSION_KEY, {})
+    new_slots = extract_slots(message)
+    merged = merge_slots(existing_slots, new_slots)
+
+    request.session[_SLOT_SESSION_KEY] = merged
+    request.session.modified = True
+
+    # ── 빠진 슬롯 확인 ──────────────────────────────────────
+    missing = missing_slots(merged)
+
+    # 빠진 슬롯이 있으면 역질문
+    if missing:
+        followup = build_followup(missing)
+        return JsonResponse({
+            "done"           : False,
+            "reply"          : followup,
+            "slots"          : merged,
+            "missing_slots"  : missing,
+        })
+
+    # ── 모든 슬롯 완성 → RAG 실행 ───────────────────────────
+    persona_text = slots_to_persona_text(merged)
+
+    try:
+        from recommender.yoonha_graph import run_pipeline
+
+        full_text = message.lower()
+        if any(kw in full_text for kw in ["머더", "미스터리"]):
+            category = "murdermystery"
+        elif any(kw in full_text for kw in ["방탈출", "탈출"]):
+            category = "escape"
+        else:
+            category = "boardgame"
+
+        group = slots_to_group(merged)
+        query = slots_to_query(merged)   # user_text 맥락용
+
+        rag_result = run_pipeline(
+            user_text=query,   # 자연어 맥락
+            group=group,       # 슬롯 직접 전달 (재파싱 방지)
+            category=category,
+            use_api=True,
+        )
+
+        games = rag_result.get("games", [])
+        answer = rag_result.get("answer", "그룹 조건을 분석했습니다.")
+        next_q = rag_result.get("next_question", "")
+        reply = (answer + "\n\n" + next_q) if next_q else answer
+        recommendations = _rag_to_recommendations(games) if games else RECOMMENDATIONS
+
+    except Exception:
+        reply = RAG_FALLBACK_MESSAGE
+        recommendations = RECOMMENDATIONS
+
+    # ── 세션 초기화 (다음 대화를 위해) ──────────────────────
+    request.session[_SLOT_SESSION_KEY] = {}
+    request.session.modified = True
+
+    return JsonResponse({
+        "done" : True,
+        "reply" : reply,
+        "slots" : merged,
+        "persona_summary" : persona_text,
+        "recommendations": recommendations,
+    })
+
+
+@csrf_exempt
+@require_POST
+def reset_slots_api(request):
+    """
+    슬롯 세션 초기화 (대화 처음부터 다시 시작)
+    POST /api/reset-slots/
+    """
+    request.session[_SLOT_SESSION_KEY] = {}
+    request.session.modified = True
+    return JsonResponse({"message": "슬롯 초기화 완료"})

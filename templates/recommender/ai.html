@@ -158,9 +158,12 @@
 {% block script %}
 {# 서버 데이터를 JS 전역 변수로 주입 #}
 <script>
-    const AI_FLOW      = {{ ai_flow_json|safe }};
-    const RECOMMENDATIONS = {{ recommendations_json|safe }};
+    const AI_FLOW = {{ ai_flow_json | safe }};
+    const RECOMMENDATIONS = {{ recommendations_json | safe }};
     const CHAT_API_URL = "{% url 'recommender:chat_api' %}";
+
+    const SMART_CHAT_API_URL  = "{% url 'recommender:smart_chat' %}";
+    const QUICK_REPLY_API_URL = "{% url 'recommender:quick_reply' %}";
 </script>
 {# 로직은 외부 파일로 분리 #}
 <script src="{% static 'js/ai.js' %}"></script>
