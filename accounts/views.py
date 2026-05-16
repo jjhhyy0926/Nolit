@@ -1,14 +1,13 @@
-
 from django.shortcuts import render, redirect
 from django.contrib.auth import authenticate
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.models import User
+from accounts.forms import SignupForm
 from django.http import JsonResponse
 from django.views.decorators.http import require_GET
+from django.contrib.auth import get_user_model
 
-# Create your views here.
+User = get_user_model()
 
 def login(request):
     if request.user.is_authenticated:
@@ -37,19 +36,45 @@ def logout(request):
     return redirect('recommender:home')
 
 
+# def signup(request):
+#     if request.user.is_authenticated:
+#         return redirect('recommender:home')
+
+#     form = SignupForm(request.POST)
+#     errors = []
+
+#     if request.method == 'POST':
+#         form = SignupForm(request.POST)
+#         if form.is_valid():
+#             user = form.save()
+#             auth_login(request, user)
+#             return redirect('recommender:home')
+#         for field_errors in form.errors.values():
+#             errors.extend(field_errors)
+
+#     return render(request, 'accounts/signup.html', {
+#         'form': form,
+#         'errors': errors,
+#         'username_val': request.POST.get('username', ''),
+#         'current_page': 'signup',
+#     })
+
 def signup(request):
     if request.user.is_authenticated:
         return redirect('recommender:home')
 
-    form = UserCreationForm()
+    form = SignupForm()
     errors = []
 
     if request.method == 'POST':
-        form = UserCreationForm(request.POST)
+        form = SignupForm(request.POST)
         if form.is_valid():
             user = form.save()
             auth_login(request, user)
             return redirect('recommender:home')
+        
+        print("=== 폼 에러 ===", form.errors)   # ← 이거 추가
+        
         for field_errors in form.errors.values():
             errors.extend(field_errors)
 
@@ -59,7 +84,6 @@ def signup(request):
         'username_val': request.POST.get('username', ''),
         'current_page': 'signup',
     })
-
 
 @require_GET
 def check_username(request):

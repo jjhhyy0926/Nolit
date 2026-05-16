@@ -1,12 +1,15 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import get_user_model
 from .models import User, Persona
 
+User = get_user_model()
 
 class SignupForm(UserCreationForm):
     email    = forms.EmailField(required=True)
     nickname = forms.CharField(max_length=50, required=False, label="닉네임")
-
+    email = forms.EmailField(required=False)
+    
     class Meta:
         model  = User
         fields = ("username", "email", "nickname", "password1", "password2")
