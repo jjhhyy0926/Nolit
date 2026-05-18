@@ -14,7 +14,6 @@ class BaseContent(models.Model):
     players_max = models.PositiveIntegerField(null=True, blank=True, verbose_name="최대 인원")
     play_time   = models.PositiveIntegerField(null=True, blank=True, verbose_name="플레이 시간(분)")
     description = models.TextField(blank=True, verbose_name="게임 설명")
-    image_url   = models.URLField(blank=True, verbose_name="이미지 URL")
     created_at  = models.DateTimeField(auto_now_add=True)
     updated_at  = models.DateTimeField(auto_now=True)
 
@@ -56,10 +55,8 @@ class BoardGame(BaseContent):
     bgg_id      = models.IntegerField(null=True, blank=True, verbose_name="BGG ID")
     bgg_rank    = models.IntegerField(null=True, blank=True, verbose_name="BGG 순위")
     category    = models.CharField(max_length=100, blank=True, verbose_name="카테고리")
-    mechanism   = models.CharField(max_length=200, blank=True, verbose_name="메커니즘")
     tags        = models.JSONField(default=list, blank=True, verbose_name="태그")
-    reviews     = models.JSONField(default=list, blank=True, verbose_name="리뷰")
-    name_eng = models.CharField(max_length=200, blank=True, verbose_name="영어 이름")
+    name_eng    = models.CharField(max_length=200, blank=True, verbose_name="영어 이름")
 
     class Meta:
         db_table  = "boardgame"
@@ -79,13 +76,12 @@ class Escape(BaseContent):
         ("상", "상"),
     ]
 
-    difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, blank=True, verbose_name="난이도")
-    region     = models.CharField(max_length=50, blank=True, verbose_name="지역")
-    brand      = models.CharField(max_length=100, blank=True, verbose_name="브랜드")
-    theme      = models.CharField(max_length=100, blank=True, verbose_name="테마")
-    fear_level = models.PositiveIntegerField(null=True, blank=True, verbose_name="공포도(0~5)")
-    tags       = models.JSONField(default=list, blank=True, verbose_name="태그")
-    reviews    = models.JSONField(default=list, blank=True, verbose_name="리뷰")
+    difficulty  = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, blank=True, verbose_name="난이도")
+    region      = models.CharField(max_length=50, blank=True, verbose_name="지역")
+    brand       = models.CharField(max_length=100, blank=True, verbose_name="브랜드")
+    theme       = models.CharField(max_length=100, blank=True, verbose_name="테마")
+    fear_level  = models.PositiveIntegerField(null=True, blank=True, verbose_name="공포도(0~5)")
+    tags        = models.JSONField(default=list, blank=True, verbose_name="태그")
 
     class Meta:
         db_table  = "escape"
@@ -111,7 +107,6 @@ class CrimeScene(BaseContent):
     publisher       = models.CharField(max_length=100, blank=True, verbose_name="출판사")
     publisher_kr    = models.CharField(max_length=100, blank=True, verbose_name="국내 출판사")
     tags            = models.JSONField(default=list, blank=True, verbose_name="태그")
-    reviews         = models.JSONField(default=list, blank=True, verbose_name="리뷰")
 
     class Meta:
         db_table  = "crimescene"
