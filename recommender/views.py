@@ -4,6 +4,7 @@ from django.http import JsonResponse, HttpResponseRedirect
 from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST, require_GET
+import traceback
 
 AI_FLOW = [
     "안녕하세요! 그룹에 맞는 여가 활동을 추천해드리겠습니다.\n먼저, 몇 명이서 활동하실 예정인가요?",
@@ -58,6 +59,41 @@ def _rag_to_recommendations(games):
         source = game.get("source", "")
         category = SOURCE_TO_CATEGORY.get(source, "보드게임")
 
+        # RAG가 찾아온 원본 타이틀
+        raw_title = game.get("title", "?")
+
+        db_image_url = ""
+        db_id = None
+        display_title = raw_title
+        db_rating = None
+
+        try:
+            db_obj = None
+            if category == "보드게임":
+                # 보드게임: 한글 이름 또는 영어 이름(name_eng)으로 검색
+                db_obj = BoardGame.objects.filter(name=raw_title).first()
+                if not db_obj:
+                    db_obj = BoardGame.objects.filter(name_eng=raw_title).first()
+            
+            elif category == "방탈출":
+                # 방탈출: DB에는 "테마명 (브랜드명)"으로 들어갈 수 있으므로 icontains 사용
+                db_obj = Escape.objects.filter(name__icontains=raw_title).first()
+            
+            elif category in ["머더미스터리", "크라임씬"]:
+                db_obj = CrimeScene.objects.filter(name=raw_title).first()
+
+            # DB에서 객체를 찾았다면 정보 추출
+            if db_obj:
+                db_id = db_obj.id
+                display_title = db_obj.name
+                db_rating = getattr(db_obj, 'rating', None)
+                if hasattr(db_obj, 'image_url') and db_obj.image_url:
+                    db_image_url = db_obj.image_url
+
+        except Exception as e:
+            print(f"DB 매핑 에러 ({raw_title}):", e)
+        # ────────────────────────────────────────────────────────
+
         if matched:
             evidence = "감정 태그 매칭: " + ", ".join(matched)
         elif score:
@@ -67,14 +103,34 @@ def _rag_to_recommendations(games):
 
         result.append({
             "rank": i,
-            "title": game.get("title", "?"),
+            "title": display_title, # DB에 있는 정확한 이름
             "category": category,
-            "rating": round(float(rating), 1) if rating else 0,
+            "rating": round(float(db_rating or rating), 1),
             "reason": game.get("reason", ""),
             "evidence": evidence,
             "risk": None,
+            "image_url": db_image_url, # 프론트로 보낼 이미지 URL
+            "db_id": db_id,            # 나중에 상세 페이지 링크용
         })
     return result
+
+    #     if matched:
+    #         evidence = "감정 태그 매칭: " + ", ".join(matched)
+    #     elif score:
+    #         evidence = "최종 점수: " + str(round(float(score), 3))
+    #     else:
+    #         evidence = "RAG 검색 결과 기반 추천"
+
+    #     result.append({
+    #         "rank": i,
+    #         "title": game.get("title", "?"),
+    #         "category": category,
+    #         "rating": round(float(rating), 1) if rating else 0,
+    #         "reason": game.get("reason", ""),
+    #         "evidence": evidence,
+    #         "risk": None,
+    #     })
+    # return result
 
 
 def home(request):
@@ -219,7 +275,7 @@ def smart_chat_api(request):
     3) 빠진 슬롯이 있으면 → 역질문 반환 (done=False)
     4) 모든 슬롯이 채워지면 → RAG 실행 후 추천 반환 (done=True)
     """
-    # ── 요청 파싱 ────────────────────────────────────────────
+    # 요청 파싱 
     try:
         body = json.loads(request.body)
         message = body.get("message", "").strip()
@@ -229,15 +285,20 @@ def smart_chat_api(request):
     if not message:
         return JsonResponse({"error": "message is required"}, status=400)
 
-    # ── 슬롯 추출 & 병합 ─────────────────────────────────────
+    # 슬롯 추출 & 병합
     existing_slots = request.session.get(_SLOT_SESSION_KEY, {})
-    new_slots = extract_slots(message)
+
+    # 1. 메시지를 추출하기 전에 현재 누락된 슬롯을 미리 확인해서 힌트를 준비
+    missing_before = missing_slots(existing_slots)
+
+    # 2. 준비한 힌트(missing_before)를 함께 넘겨주어 문맥을 파악
+    new_slots = extract_slots(message, missing=missing_before)
     merged = merge_slots(existing_slots, new_slots)
 
     request.session[_SLOT_SESSION_KEY] = merged
     request.session.modified = True
 
-    # ── 빠진 슬롯 확인 ──────────────────────────────────────
+    # 빠진 슬롯 확인 
     missing = missing_slots(merged)
 
     # 빠진 슬롯이 있으면 역질문
@@ -250,7 +311,7 @@ def smart_chat_api(request):
             "missing_slots"  : missing,
         })
 
-    # ── 모든 슬롯 완성 → RAG 실행 ───────────────────────────
+    # 모든 슬롯 완성 → RAG 실행
     persona_text = slots_to_persona_text(merged)
 
     try:
@@ -280,11 +341,15 @@ def smart_chat_api(request):
         reply = (answer + "\n\n" + next_q) if next_q else answer
         recommendations = _rag_to_recommendations(games) if games else RECOMMENDATIONS
 
-    except Exception:
+    except Exception as e:
+        print("=" * 50)
+        print("RAG 오류:", e)
+        traceback.print_exc()   # ← 전체 스택 출력
+        print("=" * 50)
         reply = RAG_FALLBACK_MESSAGE
         recommendations = RECOMMENDATIONS
 
-    # ── 세션 초기화 (다음 대화를 위해) ──────────────────────
+    # 세션 초기화 (다음 대화를 위해)
     request.session[_SLOT_SESSION_KEY] = {}
     request.session.modified = True
 

@@ -1,12 +1,11 @@
-# 역할: 사용자의 자유 문장에서 추천에 필요한 슬롯을 추출하고, 빠진 슬롯에 대해 역질문을 생성한다.
+# 역할 : 사용자의 자유 문장에서 추천에 필요한 슬롯을 추출하고, 빠진 슬롯에 대해 역질문을 생성한다.
 #
-# 슬롯 목록:
+# 슬롯 목록 :
 #   person_count : 인원 수 예) 4
 #   relationship : 관계 예) "친한" | "처음"
 #   horror_tolerance : 공포 허용도 예) "모두" | "일부" | "없음"
 #   budget : 1인당 예산(원) 예) 20000
 #   activity_level : 활동성 예) "조용" | "보통" | "활발"
-# ============================================================
 
 import json
 from langchain_openai import ChatOpenAI
@@ -37,10 +36,15 @@ _prompt = ChatPromptTemplate.from_messages([
     ("system", """사용자 메시지에서 아래 5가지 슬롯을 추출해 JSON으로만 반환하세요.
 값이 언급되지 않으면 null로 표시하세요. 설명은 생략하세요.
 
+[상황 힌트]
+현재 사용자는 다음 정보들에 대한 질문을 받았을 가능성이 높습니다: {missing_context}
+사용자의 답변에 주어가 생략되어 있더라도, 위 힌트를 바탕으로 문맥을 유추해서 슬롯을 채워주세요.
+(예: 현재 힌트에 'horror_tolerance'가 있고 사용자가 "피하고 싶어"라고 했다면, 공포를 피하고 싶다는 뜻이므로 "없음"으로 처리하세요.)
+
 슬롯 정의:
 - person_count : 정수 (예: 4)
 - relationship : "친한" 또는 "처음"
-- horror_tolerance : "모두" | "일부" | "없음"
+- horror_tolerance : "모두" | "일부" | "없음" (공포를 피하고 싶다는 표현은 "없음"으로 매핑)
 - budget : 정수, 1인당 원 단위 (예: 20000)
 - activity_level : "조용" | "보통" | "활발"
 
@@ -57,16 +61,19 @@ _prompt = ChatPromptTemplate.from_messages([
 
 _chain = _prompt | _llm
 
-
-def extract_slots(message: str) -> dict:
+# [수정된 부분] 매개변수에 missing 리스트를 추가로 받아서 프롬프트에 넣어줘!
+def extract_slots(message: str, missing: list[str] = None) -> dict:
     """
     자유 문장 → 슬롯 딕셔너리 추출
-    예) "4명이서 친한 친구끼리, 무서운 거 괜찮아, 2만원"
-        → {"person_count": 4, "relationship": "친한",
-           "horror_tolerance": "모두", "budget": 20000,
-           "activity_level": null}
     """
-    raw = _chain.invoke({"message": message}).content.strip()
+    # 빠진 슬롯을 문자열로 만들어 프롬프트에 전달 (없으면 '없음')
+    missing_context = ", ".join(missing) if missing else "없음"
+    
+    # invoke할 때 missing_context도 같이 넣어준다!
+    raw = _chain.invoke({
+        "message": message, 
+        "missing_context": missing_context
+    }).content.strip()
 
     # 마크다운 코드블록 제거
     raw = raw.replace("```json", "").replace("```", "").strip()

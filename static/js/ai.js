@@ -1,12 +1,12 @@
 /* AI 추천 페이지 — 채팅 로직 */
 let currentStep = 0;
 
-const $chatWrap   = document.getElementById('chat-wrap');
-const $typing     = document.getElementById('typing');
-const $input      = document.getElementById('chat-input');
-const $sendBtn    = document.getElementById('send-btn');
+const $chatWrap = document.getElementById('chat-wrap');
+const $typing = document.getElementById('typing');
+const $input = document.getElementById('chat-input');
+const $sendBtn = document.getElementById('send-btn');
 const $recSection = document.getElementById('rec-section');
-const $recList    = document.getElementById('rec-list');
+const $recList = document.getElementById('rec-list');
 
 function getCookie(name) {
     const value = `; ${document.cookie}`;
@@ -77,21 +77,29 @@ function showTyping(on) {
 function renderRecommendations(recs) {
     const rankCls = ['', 'rank-gold', 'rank-silver', 'rank-bronze'];
     $recList.innerHTML = recs.map(r => `
-        <div class="card">
-            <div class="rec-header">
-                <div class="rec-title-row">
-                    <span class="${rankCls[r.rank]}">#${r.rank}</span>
-                    <strong style="font-size:1rem; color:#2A2A2A">${escHtml(r.title)}</strong>
-                    <span class="badge badge-teal">${escHtml(r.category)}</span>
+        <div class="card" style="display:flex; gap:16px; align-items:flex-start;">
+            
+            ${r.image_url ? 
+                `<img src="${r.image_url}" alt="${escHtml(r.title)}" style="width:80px; height:80px; object-fit:cover; border-radius:8px; border:1px solid #EEE; flex-shrink:0;">` 
+                : `<div style="width:80px; height:80px; background:#F5F5F5; border-radius:8px; display:flex; align-items:center; justify-content:center; color:#AAA; font-size:12px; flex-shrink:0;">No Image</div>`
+            }
+
+            <div style="flex:1;">
+                <div class="rec-header" style="margin-bottom:8px;">
+                    <div class="rec-title-row">
+                        <span class="${rankCls[r.rank]}">#${r.rank}</span>
+                        <strong style="font-size:1rem; color:#2A2A2A">${escHtml(r.title)}</strong>
+                        <span class="badge badge-teal">${escHtml(r.category)}</span>
+                    </div>
+                    <span class="rec-rating">${r.rating}<small>/5</small></span>
                 </div>
-                <span class="rec-rating">${r.rating}<small>/5</small></span>
+                <div class="rec-reason-row">
+                    <span class="check-mark">✓</span>
+                    <p class="rec-reason" style="margin:0;">${escHtml(r.reason)}</p>
+                </div>
+                <div class="evidence-box">${escHtml(r.evidence)}</div>
+                ${r.risk ? `<div class="risk-box">⚠ ${escHtml(r.risk)}</div>` : ''}
             </div>
-            <div class="rec-reason-row">
-                <span class="check-mark">✓</span>
-                <p class="rec-reason">${escHtml(r.reason)}</p>
-            </div>
-            <div class="evidence-box">${escHtml(r.evidence)}</div>
-            ${r.risk ? `<div class="risk-box">⚠ ${escHtml(r.risk)}</div>` : ''}
         </div>
     `).join('');
     $recSection.style.display = 'block';
@@ -131,16 +139,16 @@ async function sendMessage(text) {
     }
 }
 
-$sendBtn.addEventListener('click', () => sendMessage($input.value));
-$input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
-        e.preventDefault();
-        sendMessage($input.value);
-    }
-});
-document.querySelectorAll('.quick-chip').forEach(chip => {
-    chip.addEventListener('click', () => sendMessage(chip.dataset.val));
-});
+// $sendBtn.addEventListener('click', () => sendMessage($input.value));
+// $input.addEventListener('keydown', (e) => {
+//     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+//         e.preventDefault();
+//         sendMessage($input.value);
+//     }
+// });
+// document.querySelectorAll('.quick-chip').forEach(chip => {
+//     chip.addEventListener('click', () => sendMessage(chip.dataset.val));
+// });
 
 // 스마트 챗봇 — 자유 문장 + 역질문 (SMART_CHAT_API_URL 사용)
 
@@ -207,19 +215,13 @@ async function sendSmartMessage(text) {
     }
 }
 
-// 기존 단계별 칩 클릭을 스마트 챗봇으로 교체
-document.querySelectorAll('.quick-chip').forEach(chip => {
-    chip.addEventListener('click', () => sendSmartMessage(chip.dataset.val));
-});
-
-// 전송 버튼 / Enter를 스마트 챗봇으로 교체
-$sendBtn.removeEventListener('click',  $sendBtn._handler);
-$input.removeEventListener('keydown',  $input._handler);
-
 $sendBtn.addEventListener('click', () => sendSmartMessage($input.value));
 $input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
         e.preventDefault();
         sendSmartMessage($input.value);
     }
+});
+document.querySelectorAll('.quick-chip').forEach(chip => {
+    chip.addEventListener('click', () => sendSmartMessage(chip.dataset.val));
 });
